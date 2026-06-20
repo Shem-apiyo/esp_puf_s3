@@ -1,0 +1,1 @@
+EXTERN(bootloader_before_init)
