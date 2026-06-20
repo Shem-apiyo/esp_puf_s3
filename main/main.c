@@ -6,6 +6,7 @@
 #include "capture/puf_capture.h"
 #include "integrity/puf_integrity.h"
 #include "reconcile/puf_reconcile.h"
+#include "integrity/puf_wenc.h"
 #include "mbedtls/platform_util.h"
 
 static const char *TAG = "ORCHESTRATOR";
@@ -27,13 +28,19 @@ static bool is_enrolled(void) {
 }
 
 static bool nvs_write_W(const uint8_t *W) {
+    uint8_t enc_buf[PUF_HELPER_DATA_BYTES + PUF_WENC_OVERHEAD];
+    if (!puf_wenc_encrypt(W, PUF_HELPER_DATA_BYTES, enc_buf, sizeof(enc_buf))) {
+        ESP_LOGE("ORCHESTRATOR", "W encryption failed.");
+        return false;
+    }
     nvs_handle_t h;
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h);
     if (err != ESP_OK) return false;
-    err = nvs_set_blob(h, NVS_KEY_W, W, PUF_HELPER_DATA_BYTES);
+    err = nvs_set_blob(h, NVS_KEY_W, enc_buf, sizeof(enc_buf));
     if (err == ESP_OK) err = nvs_set_u8(h, NVS_KEY_ENROLLED, 1);
     if (err == ESP_OK) err = nvs_commit(h);
     nvs_close(h);
+    mbedtls_platform_zeroize(enc_buf, sizeof(enc_buf));
     return (err == ESP_OK);
 }
 
@@ -41,10 +48,14 @@ static bool nvs_read_W(uint8_t *W_out) {
     nvs_handle_t h;
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &h);
     if (err != ESP_OK) return false;
-    size_t len = PUF_HELPER_DATA_BYTES;
-    err = nvs_get_blob(h, NVS_KEY_W, W_out, &len);
+    uint8_t enc_buf[PUF_HELPER_DATA_BYTES + PUF_WENC_OVERHEAD];
+    size_t len = sizeof(enc_buf);
+    err = nvs_get_blob(h, NVS_KEY_W, enc_buf, &len);
     nvs_close(h);
-    return (err == ESP_OK && len == PUF_HELPER_DATA_BYTES);
+    if (err != ESP_OK || len != sizeof(enc_buf)) return false;
+    bool ok = puf_wenc_decrypt(enc_buf, len, W_out, PUF_HELPER_DATA_BYTES);
+    mbedtls_platform_zeroize(enc_buf, sizeof(enc_buf));
+    return ok;
 }
 
 void app_main(void) {
@@ -113,6 +124,12 @@ cleanup:
     mbedtls_platform_zeroize(K_enc,  sizeof(K_enc));
     mbedtls_platform_zeroize(K_auth, sizeof(K_auth));
 }
+
+
+
+
+
+
 
 
 
