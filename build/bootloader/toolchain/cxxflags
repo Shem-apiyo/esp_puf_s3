@@ -1,6 +1,0 @@
-"-specs=C:/Users/shema/OneDrive/Desktop/esp_puf_s3/build/bootloader/specs/picolibc.specs"
--mlongcalls
--fno-builtin-memcpy
--fno-builtin-memset
--fno-builtin-bzero
--fno-rtti
