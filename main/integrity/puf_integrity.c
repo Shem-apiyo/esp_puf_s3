@@ -1,4 +1,7 @@
-﻿#include "puf_integrity.h"
+﻿#include "../kdf/puf_kdf.h"
+#include "psa/crypto.h"
+#include "mbedtls/platform_util.h"
+#include "puf_integrity.h"
 #include "esp_hmac.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
@@ -19,12 +22,34 @@ static const char *TAG         = "PUF_INTEGRITY";
 /* ---------- internal helpers ---------- */
 
 static bool hmac_compute(const uint8_t *W, uint8_t *tag_out) {
-    esp_err_t err = esp_hmac_calculate(PUF_HMAC_KEY_ID,
-                                       W,
-                                       PUF_HELPER_DATA_BYTES,
-                                       tag_out);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "HMAC peripheral error: %s", esp_err_to_name(err));
+    uint8_t integrity_key[32] = {0};
+    if (!puf_hkdf_derive("INTEGRITY_V1", 12, integrity_key, 32)) {
+        ESP_LOGE(TAG, "Integrity key derivation failed.");
+        return false;
+    }
+
+    psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
+    psa_set_key_type(&attr, PSA_KEY_TYPE_HMAC);
+    psa_set_key_bits(&attr, 256);
+    psa_set_key_usage_flags(&attr, PSA_KEY_USAGE_SIGN_MESSAGE);
+    psa_set_key_algorithm(&attr, PSA_ALG_HMAC(PSA_ALG_SHA_256));
+
+    psa_key_id_t key_id;
+    psa_status_t s = psa_import_key(&attr, integrity_key, 32, &key_id);
+    mbedtls_platform_zeroize(integrity_key, sizeof(integrity_key));
+    if (s != PSA_SUCCESS) {
+        ESP_LOGE(TAG, "PSA key import failed: %d", (int)s);
+        return false;
+    }
+
+    size_t out_len = 0;
+    s = psa_mac_compute(key_id, PSA_ALG_HMAC(PSA_ALG_SHA_256),
+                        W, PUF_HELPER_DATA_BYTES,
+                        tag_out, PUF_HMAC_TAG_BYTES, &out_len);
+    psa_destroy_key(key_id);
+
+    if (s != PSA_SUCCESS) {
+        ESP_LOGE(TAG, "HMAC compute failed: %d", (int)s);
         return false;
     }
     return true;
