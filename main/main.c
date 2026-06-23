@@ -1,4 +1,4 @@
-#include <stdio.h>
+﻿#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "esp_log.h"
@@ -65,13 +65,12 @@ static bool nvs_read_W(uint8_t *W_out) {
 }
 
 void app_main(void) {
+    /* Fail-closed NVS: Lock down on corruption instead of auto-erasing */
     esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
-        ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "FATAL: NVS initialization failed (err: 0x%x). Possible tampering. System locked.", ret);
+        while (1) { vTaskDelay(pdMS_TO_TICKS(1000)); }
     }
-    ESP_ERROR_CHECK(ret);
 
     uint8_t R[PUF_RESPONSE_BYTES];
     uint8_t W[PUF_HELPER_DATA_BYTES];
@@ -83,12 +82,16 @@ void app_main(void) {
     memset(K_enc, 0, sizeof(K_enc));
     memset(K_auth,0, sizeof(K_auth));
 
+   
     if (!puf_capture_sram(R, PUF_RESPONSE_BYTES)) {
         ESP_LOGE(TAG, "PUF capture failed. Halting.");
         goto cleanup;
     }
 
     if (!is_enrolled()) {
+         ESP_LOGI("INTER_DEVICE", "R[0..15]: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
+             R[0],R[1],R[2],R[3],R[4],R[5],R[6],R[7],
+             R[8],R[9],R[10],R[11],R[12],R[13],R[14],R[15]);
         ESP_LOGI(TAG, "Device not enrolled. Starting enrollment...");
 
         if (!puf_reconcile_enroll(R, W)) {
@@ -121,8 +124,7 @@ void app_main(void) {
             goto cleanup;
         }
         ESP_LOGI(TAG, "Identity reconstructed. K_enc and K_auth ready.");
-
-        /* --- Layer 3: COSE_Mac0 attestation --- */
+                /* --- Layer 3: COSE_Mac0 attestation --- */
         uint8_t nonce[PUF_ATTEST_NONCE_BYTES] = {0};
         uint8_t token[PUF_ATTEST_TOKEN_MAX];
         size_t  token_len = sizeof(token);
