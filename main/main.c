@@ -124,6 +124,7 @@ void app_main(void) {
             goto cleanup;
         }
         ESP_LOGI(TAG, "Identity reconstructed. K_enc and K_auth ready.");
+        
                 /* --- Layer 3: COSE_Mac0 attestation --- */
         uint8_t nonce[PUF_ATTEST_NONCE_BYTES] = {0};
         uint8_t token[PUF_ATTEST_TOKEN_MAX];
