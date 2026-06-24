@@ -158,9 +158,12 @@ project(esp_puf_s3)
 | 1 | RTC entropy + BCH(255,119,20) fuzzy extraction | ✅ Complete |
 | 2 | PSA HKDF + AES-256-GCM helper data encryption | ✅ Complete |
 | 3 | COSE_Mac0 CWT attestation + Python verifier | ✅ Complete |
-| — | Secure Boot + Flash Encryption | 🔲 Planned |
+| 4 | Secure Boot V2 (RSA-3072) | ✅ Complete |
+| — | Flash Encryption | 🔲 Planned |
 
-**Secure Boot** has not yet been integrated. Without it, an attacker with physical access can flash a modified image. The hardware root of trust is not complete until Secure Boot is enabled. This is documented as a pre-publication requirement.
+**Secure Boot V2** is enabled and permanent. The bootloader and every app image are signed with an RSA-3072 key. The public key digest is burned into eFuse BLOCK_KEY0. On every boot the ROM verifies the bootloader signature before execution and the bootloader verifies the app signature before loading it. Any unsigned or incorrectly signed image is rejected at boot. JTAG is hardware-disabled as part of the Secure Boot burn sequence.
+
+**Flash Encryption** is not yet enabled. Flash contents are not encrypted at rest. This is the remaining open item before the hardware root of trust is complete.
 
 ---
 
@@ -176,7 +179,7 @@ project(esp_puf_s3)
 
 ## Author
 
-Sammy Shem Apiyo
+**Sammy Shem Apiyo**
 
 [github.com/Shem-apiyo](https://github.com/Shem-apiyo) · shem.apiyo@gmail.com
 
@@ -185,4 +188,3 @@ Sammy Shem Apiyo
 ## License
 
 MIT — see `LICENSE`.
-
