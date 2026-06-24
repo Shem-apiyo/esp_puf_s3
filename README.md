@@ -174,22 +174,9 @@ project(esp_puf_s3)
 
 ---
 
-## Engineering Record
-
-The full implementation record — including what broke, what was decided, and what had to be corrected — is in the [engineering dossier](docs/ESP32S3_PUF_Engineering_Dossier_L2_L3.docx). This covers the ROM contamination discovery, the eFuse misconfiguration incident, the BCH parameter search, the HKDF commit revert, and the fabricated output event. It is a more accurate representation of how this system was built than any paper.
-
----
-
-## Paper
-
-*Targeting IEEE AFRICON 2027, Kumasi, Ghana.*
-Manuscript in preparation. Layer 1 methodology and entropy analysis are complete. Layer 2 and Layer 3 papers pending Secure Boot integration.
-
----
-
 ## Author
 
-** Sammy Shem Apiyo**
+Sammy Shem Apiyo
 
 [github.com/Shem-apiyo](https://github.com/Shem-apiyo) · shem.apiyo@gmail.com
 
