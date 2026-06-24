@@ -5,3 +5,5 @@ __pycache__/
 .vscode/
 
 secure_boot_signing_key.pem
+
+main/network/credentials.h

@@ -1,4 +1,4 @@
-﻿#include <stdio.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "esp_log.h"
@@ -6,13 +6,14 @@
 #include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/usb_serial_jtag.h"
 #include "capture/puf_capture.h"
 #include "integrity/puf_integrity.h"
 #include "reconcile/puf_reconcile.h"
 #include "integrity/puf_wenc.h"
 #include "attestation/puf_attest.h"
 #include "mbedtls/platform_util.h"
+#include "network/puf_wifi.h"
+#include "network/puf_mqtt.h"
 
 static const char *TAG = "ORCHESTRATOR";
 
@@ -130,58 +131,35 @@ void app_main(void) {
         uint8_t token[PUF_ATTEST_TOKEN_MAX];
         size_t  token_len = sizeof(token);
 
-        /* Install USB Serial JTAG driver securely */
-        if (!usb_serial_jtag_is_driver_installed()) {
-            usb_serial_jtag_driver_config_t usb_cfg = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
-            usb_serial_jtag_driver_install(&usb_cfg);
+                /* --- Layer 4: WiFi + MQTT transport --- */
+        char device_id[7];
+        if (!puf_wifi_connect()) {
+            ESP_LOGE(TAG, "WiFi connection failed.");
+            goto cleanup;
         }
+        puf_wifi_get_device_id(device_id);
+        ESP_LOGI(TAG, "Device ID: %s", device_id);
 
-        /* Beacon loop: wait for trigger byte 'S' from verifier */
-        {
-            uint8_t trigger = 0;
-            int wait_cycles = 0;
-            while (trigger != 'S') {
-                if (wait_cycles % 10 == 0) {
-                    ESP_LOGI(TAG, "WAITING_FOR_VERIFIER");
-                }
-                int got = usb_serial_jtag_read_bytes(&trigger, 1, pdMS_TO_TICKS(100));
-                if (got <= 0) trigger = 0;
-                wait_cycles++;
-            }
-        }
-        ESP_LOGI(TAG, "ATTEST_READY");
-
-        /* Read 64 hex ASCII chars for nonce */
-        char hex_nonce[65] = {0};
-        int hi = 0;
-        while (hi < 64) {
-            uint8_t b = 0;
-            int got = usb_serial_jtag_read_bytes(&b, 1, pdMS_TO_TICKS(100));
-            if (got <= 0) continue;
-            if ((b >= '0' && b <= '9') || (b >= 'a' && b <= 'f') ||
-                (b >= 'A' && b <= 'F')) {
-                hex_nonce[hi++] = (char)b;
-            }
-        }
-        for (int i = 0; i < 32; i++) {
-            char byte_str[3] = {hex_nonce[i*2], hex_nonce[i*2+1], 0};
-            nonce[i] = (uint8_t)strtol(byte_str, NULL, 16);
-        }
-        ESP_LOGI(TAG, "Nonce received (32 bytes).");
-
-        if (!puf_attest_build(K_auth, nonce, token, &token_len)) {
-            ESP_LOGE(TAG, "Attestation failed.");
+        if (!puf_mqtt_connect(device_id)) {
+            ESP_LOGE(TAG, "MQTT connection failed.");
             goto cleanup;
         }
 
-        /* Hex-encode and transmit token */
-        ESP_LOGI(TAG, "TOKEN_BEGIN");
-        for (size_t i = 0; i < token_len; i++) {
-            printf("%02x", token[i]);
+        if (!puf_mqtt_wait_for_nonce(nonce)) {
+            ESP_LOGE(TAG, "Nonce timeout.");
+            puf_mqtt_disconnect();
+            goto cleanup;
         }
-        printf("\n");
-        fflush(stdout);
-        ESP_LOGI(TAG, "TOKEN_END");
+
+        if (!puf_attest_build(K_auth, nonce, token, &token_len)) {
+            ESP_LOGE(TAG, "Attestation failed.");
+            puf_mqtt_disconnect();
+            goto cleanup;
+        }
+
+        puf_mqtt_publish_token(token, token_len);
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        puf_mqtt_disconnect();
 
         mbedtls_platform_zeroize(token, sizeof(token));
         mbedtls_platform_zeroize(nonce, sizeof(nonce));
@@ -193,3 +171,6 @@ cleanup:
     mbedtls_platform_zeroize(K_enc, sizeof(K_enc));
     mbedtls_platform_zeroize(K_auth,sizeof(K_auth));
 }
+
+
+

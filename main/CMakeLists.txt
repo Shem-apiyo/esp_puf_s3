@@ -6,12 +6,15 @@ idf_component_register(SRCS "main.c"
                             "attestation/puf_attest.c"
                             "reconcile/puf_reconcile.c"
                             "reconcile/bch.c"
+                            "network/puf_wifi.c"
+                            "network/puf_mqtt.c"
                        INCLUDE_DIRS "."
                                     "capture"
                                     "integrity"
                                     "kdf"
                                     "attestation"
                                     "reconcile"
+                                    "network"
                        REQUIRES efuse
                                 esp_hw_support
                                 esp_security
@@ -19,4 +22,9 @@ idf_component_register(SRCS "main.c"
                                 esp_driver_usb_serial_jtag
                                 nvs_flash
                                 mbedtls
-                                qcbor)
+                                qcbor
+                                esp_wifi
+                                esp_netif
+                                esp_event
+                                esp-mqtt)
+
