@@ -1,5 +1,6 @@
 idf_component_register(SRCS "main.c"
                             "capture/puf_capture.c"
+                            "capture/puf_mfrc522.c"
                             "integrity/puf_integrity.c"
                             "integrity/puf_wenc.c"
                             "kdf/puf_kdf.c"
@@ -19,12 +20,12 @@ idf_component_register(SRCS "main.c"
                                 esp_hw_support
                                 esp_security
                                 esp_timer
-                                esp_driver_usb_serial_jtag
                                 nvs_flash
                                 mbedtls
                                 qcbor
                                 esp_wifi
                                 esp_netif
                                 esp_event
-                                esp-mqtt)
-
+                                esp-mqtt
+                                esp_driver_spi
+                                esp_driver_gpio)

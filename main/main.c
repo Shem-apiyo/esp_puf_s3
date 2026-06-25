@@ -7,6 +7,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "capture/puf_capture.h"
+#include "capture/puf_mfrc522.h"
 #include "integrity/puf_integrity.h"
 #include "reconcile/puf_reconcile.h"
 #include "integrity/puf_wenc.h"
@@ -66,10 +67,15 @@ static bool nvs_read_W(uint8_t *W_out) {
 }
 
 void app_main(void) {
-    /* Fail-closed NVS: Lock down on corruption instead of auto-erasing */
     esp_err_t ret = nvs_flash_init();
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "FATAL: NVS initialization failed (err: 0x%x). Possible tampering. System locked.", ret);
+        ESP_LOGE(TAG, "FATAL: NVS init failed (0x%x). System locked.", ret);
+        while (1) { vTaskDelay(pdMS_TO_TICKS(1000)); }
+    }
+
+    /* Initialise MFRC522 early — halt if not detected */
+    if (!puf_mfrc522_init()) {
+        ESP_LOGE(TAG, "MFRC522 not detected. Check wiring. Halting.");
         while (1) { vTaskDelay(pdMS_TO_TICKS(1000)); }
     }
 
@@ -77,24 +83,25 @@ void app_main(void) {
     uint8_t W[PUF_HELPER_DATA_BYTES];
     uint8_t K_enc[PUF_KEY_BYTES];
     uint8_t K_auth[PUF_KEY_BYTES];
+    uint8_t card_uid[MFRC522_UID_BYTES];
 
-    memset(R,     0, sizeof(R));
-    memset(W,     0, sizeof(W));
-    memset(K_enc, 0, sizeof(K_enc));
-    memset(K_auth,0, sizeof(K_auth));
+    memset(R,        0, sizeof(R));
+    memset(W,        0, sizeof(W));
+    memset(K_enc,    0, sizeof(K_enc));
+    memset(K_auth,   0, sizeof(K_auth));
+    memset(card_uid, 0, sizeof(card_uid));
 
-   
     if (!puf_capture_sram(R, PUF_RESPONSE_BYTES)) {
         ESP_LOGE(TAG, "PUF capture failed. Halting.");
         goto cleanup;
     }
 
     if (!is_enrolled()) {
-         ESP_LOGI("INTER_DEVICE", "R[0..15]: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
-             R[0],R[1],R[2],R[3],R[4],R[5],R[6],R[7],
-             R[8],R[9],R[10],R[11],R[12],R[13],R[14],R[15]);
+        ESP_LOGI("INTER_DEVICE", "R[0..15]: %02x %02x %02x %02x %02x %02x %02x %02x "
+                 "%02x %02x %02x %02x %02x %02x %02x %02x",
+                 R[0],R[1],R[2],R[3],R[4],R[5],R[6],R[7],
+                 R[8],R[9],R[10],R[11],R[12],R[13],R[14],R[15]);
         ESP_LOGI(TAG, "Device not enrolled. Starting enrollment...");
-
         if (!puf_reconcile_enroll(R, W)) {
             ESP_LOGE(TAG, "BCH enrollment failed.");
             goto cleanup;
@@ -111,7 +118,6 @@ void app_main(void) {
 
     } else {
         ESP_LOGI(TAG, "Device enrolled. Starting reconstruction...");
-
         if (!nvs_read_W(W)) {
             ESP_LOGE(TAG, "NVS read failed.");
             goto cleanup;
@@ -125,14 +131,19 @@ void app_main(void) {
             goto cleanup;
         }
         ESP_LOGI(TAG, "Identity reconstructed. K_enc and K_auth ready.");
-        
-                /* --- Layer 3: COSE_Mac0 attestation --- */
+
+        /* --- Layer 5: RFID card tap --- */
+        ESP_LOGI(TAG, "Present card to authenticate...");
+        puf_mfrc522_wait_for_card(card_uid);
+        ESP_LOGI(TAG, "Card accepted: %02x:%02x:%02x:%02x",
+                 card_uid[0], card_uid[1], card_uid[2], card_uid[3]);
+
+        /* --- Layer 4: WiFi + MQTT transport --- */
         uint8_t nonce[PUF_ATTEST_NONCE_BYTES] = {0};
         uint8_t token[PUF_ATTEST_TOKEN_MAX];
         size_t  token_len = sizeof(token);
+        char    device_id[7];
 
-                /* --- Layer 4: WiFi + MQTT transport --- */
-        char device_id[7];
         if (!puf_wifi_connect()) {
             ESP_LOGE(TAG, "WiFi connection failed.");
             goto cleanup;
@@ -166,11 +177,8 @@ void app_main(void) {
     }
 
 cleanup:
-    mbedtls_platform_zeroize(R,     sizeof(R));
-    mbedtls_platform_zeroize(W,     sizeof(W));
-    mbedtls_platform_zeroize(K_enc, sizeof(K_enc));
-    mbedtls_platform_zeroize(K_auth,sizeof(K_auth));
+    mbedtls_platform_zeroize(R,      sizeof(R));
+    mbedtls_platform_zeroize(W,      sizeof(W));
+    mbedtls_platform_zeroize(K_enc,  sizeof(K_enc));
+    mbedtls_platform_zeroize(K_auth, sizeof(K_auth));
 }
-
-
-
