@@ -94,10 +94,11 @@ def main():
     try: client.connect(args.broker, 1883, 60)
     except Exception as e: print(f"[FAIL] {e}"); return
     client.loop_start()
-    timeout = 120
+    timeout = 300
     while not state["done"] and timeout > 0: time.sleep(1); timeout -= 1
     if not state["done"]: print("[FAIL] Timeout.")
     client.loop_stop(); client.disconnect()
 
 if __name__ == "__main__":
     main()
+

@@ -50,10 +50,11 @@ bool puf_wifi_connect(void) {
     ESP_ERROR_CHECK(esp_wifi_start());
     ESP_LOGI(TAG, "Connecting to %s...", PUF_WIFI_SSID);
     EventBits_t bits = xEventGroupWaitBits(s_wifi_events,
-        WIFI_CONNECTED_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(30000));
+        WIFI_CONNECTED_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(60000));
     return (bits & WIFI_CONNECTED_BIT) != 0;
 }
 
 void puf_wifi_get_device_id(char *out_str) {
     snprintf(out_str, 7, "%02x%02x%02x", s_mac[3], s_mac[4], s_mac[5]);
 }
+

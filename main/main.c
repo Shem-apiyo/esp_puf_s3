@@ -6,8 +6,8 @@
 #include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "driver/gpio.h"
 #include "capture/puf_capture.h"
-#include "capture/puf_mfrc522.h"
 #include "integrity/puf_integrity.h"
 #include "reconcile/puf_reconcile.h"
 #include "integrity/puf_wenc.h"
@@ -21,6 +21,7 @@ static const char *TAG = "ORCHESTRATOR";
 #define NVS_NAMESPACE    "puf_v2"
 #define NVS_KEY_W        "helper_w"
 #define NVS_KEY_ENROLLED "enrolled"
+#define PIR_GPIO         GPIO_NUM_8
 
 static bool is_enrolled(void) {
     nvs_handle_t h;
@@ -73,23 +74,19 @@ void app_main(void) {
         while (1) { vTaskDelay(pdMS_TO_TICKS(1000)); }
     }
 
-    /* Initialise MFRC522 early — halt if not detected */
-    if (!puf_mfrc522_init()) {
-        ESP_LOGE(TAG, "MFRC522 not detected. Check wiring. Halting.");
-        while (1) { vTaskDelay(pdMS_TO_TICKS(1000)); }
-    }
+    /* PIR sensor on GPIO8 — input only, no driver needed */
+    gpio_set_direction(PIR_GPIO, GPIO_MODE_INPUT);
+    ESP_LOGI(TAG, "PIR sensor initialised on GPIO%d.", PIR_GPIO);
 
     uint8_t R[PUF_RESPONSE_BYTES];
     uint8_t W[PUF_HELPER_DATA_BYTES];
     uint8_t K_enc[PUF_KEY_BYTES];
     uint8_t K_auth[PUF_KEY_BYTES];
-    uint8_t card_uid[MFRC522_UID_BYTES];
 
-    memset(R,        0, sizeof(R));
-    memset(W,        0, sizeof(W));
-    memset(K_enc,    0, sizeof(K_enc));
-    memset(K_auth,   0, sizeof(K_auth));
-    memset(card_uid, 0, sizeof(card_uid));
+    memset(R,      0, sizeof(R));
+    memset(W,      0, sizeof(W));
+    memset(K_enc,  0, sizeof(K_enc));
+    memset(K_auth, 0, sizeof(K_auth));
 
     if (!puf_capture_sram(R, PUF_RESPONSE_BYTES)) {
         ESP_LOGE(TAG, "PUF capture failed. Halting.");
@@ -132,18 +129,12 @@ void app_main(void) {
         }
         ESP_LOGI(TAG, "Identity reconstructed. K_enc and K_auth ready.");
 
-        /* --- Layer 5: RFID card tap --- */
-        ESP_LOGI(TAG, "Present card to authenticate...");
-        puf_mfrc522_wait_for_card(card_uid);
-        ESP_LOGI(TAG, "Card accepted: %02x:%02x:%02x:%02x",
-                 card_uid[0], card_uid[1], card_uid[2], card_uid[3]);
-
-        /* --- Layer 4: WiFi + MQTT transport --- */
         uint8_t nonce[PUF_ATTEST_NONCE_BYTES] = {0};
         uint8_t token[PUF_ATTEST_TOKEN_MAX];
         size_t  token_len = sizeof(token);
         char    device_id[7];
 
+        /* Step 1: Connect to network */
         if (!puf_wifi_connect()) {
             ESP_LOGE(TAG, "WiFi connection failed.");
             goto cleanup;
@@ -156,12 +147,26 @@ void app_main(void) {
             goto cleanup;
         }
 
+        /* Step 2: Receive nonce from verifier */
         if (!puf_mqtt_wait_for_nonce(nonce)) {
             ESP_LOGE(TAG, "Nonce timeout.");
             puf_mqtt_disconnect();
             goto cleanup;
         }
 
+        /* Step 3: PIR presence detection */
+        ESP_LOGI(TAG, "Network ready. Waiting for presence on GPIO%d...", PIR_GPIO);
+        int pir_count = 0;
+        while (gpio_get_level(PIR_GPIO) == 0) {
+            if (pir_count % 20 == 0) {
+                ESP_LOGI(TAG, "PIR GPIO8 level: %d (waiting for HIGH)", gpio_get_level(PIR_GPIO));
+            }
+            pir_count++;
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+        ESP_LOGI(TAG, "Presence detected. Authorizing transaction...");
+
+        /* Step 4: Build and publish attestation token */
         if (!puf_attest_build(K_auth, nonce, token, &token_len)) {
             ESP_LOGE(TAG, "Attestation failed.");
             puf_mqtt_disconnect();
@@ -182,3 +187,4 @@ cleanup:
     mbedtls_platform_zeroize(K_enc,  sizeof(K_enc));
     mbedtls_platform_zeroize(K_auth, sizeof(K_auth));
 }
+

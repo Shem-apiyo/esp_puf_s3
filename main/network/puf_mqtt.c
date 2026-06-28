@@ -81,7 +81,7 @@ bool puf_mqtt_connect(const char *device_id) {
                                    mqtt_event_handler, NULL);
     esp_mqtt_client_start(s_client);
     EventBits_t bits = xEventGroupWaitBits(s_mqtt_events, MQTT_CONNECTED_BIT,
-        pdFALSE, pdFALSE, pdMS_TO_TICKS(10000));
+        pdFALSE, pdFALSE, pdMS_TO_TICKS(30000));
     return (bits & MQTT_CONNECTED_BIT) != 0;
 }
 
@@ -89,7 +89,7 @@ bool puf_mqtt_wait_for_nonce(uint8_t *nonce_out) {
     esp_mqtt_client_publish(s_client, s_topic_ready, "1", 1, 1, 0);
     ESP_LOGI(TAG, "Ready published. Waiting for nonce...");
     EventBits_t bits = xEventGroupWaitBits(s_mqtt_events, NONCE_RECEIVED_BIT,
-        pdTRUE, pdFALSE, pdMS_TO_TICKS(60000));
+        pdTRUE, pdFALSE, pdMS_TO_TICKS(120000));
     if (bits & NONCE_RECEIVED_BIT) { memcpy(nonce_out, s_nonce, 32); return true; }
     return false;
 }
@@ -111,3 +111,5 @@ void puf_mqtt_disconnect(void) {
     esp_mqtt_client_destroy(s_client);
     s_client = NULL;
 }
+
+

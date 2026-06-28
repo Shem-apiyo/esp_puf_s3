@@ -179,7 +179,7 @@ bool puf_mfrc522_init(void) {
     reg_write(REG_ModeReg,  0x3D);
 
     /* Maximum antenna gain (48dB) */
-    reg_write(REG_RFCfgReg, 0x70);
+    reg_write(REG_RFCfgReg, 0x60);
 
     mfrc522_antenna_on();
 
@@ -187,7 +187,7 @@ bool puf_mfrc522_init(void) {
     ESP_LOGI(TAG, "Version register: 0x%02x", ver);
 
     if (ver == 0x00 || ver == 0xFF) {
-        ESP_LOGE(TAG, "Not detected — check wiring.");
+        ESP_LOGE(TAG, "Not detected ï¿½ check wiring.");
         return false;
     }
     ESP_LOGI(TAG, "MFRC522 initialised (gain=48dB).");
